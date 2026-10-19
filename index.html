@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<!-- LINE 內建瀏覽器快取很兇：強制每次重抓，避免使用者拿到舊版 -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>電子名片分享服務｜LINE 電子名片</title>
+<meta name="description" content="LINE 電子名片分享服務：把店家名片做成 LINE 原生卡片，可左右滑動、按鈕可點、收到的人能再轉發。">
+
+<!-- ═══════════════════════════════════════════════════════════
+     LINE / FB 分享預覽（貼連結自動展開成名片圖卡）
+     分享預覽的 og:image／og:url 由 client.json 的 links.page_url 自動寫入，不需手改
+     ═══════════════════════════════════════════════════════════ -->
+<meta property="og:type" content="profile">
+<meta property="og:title" content="電子名片分享服務">
+<meta property="og:description" content="在 LINE 聊天室裡可左右滑動、按鈕可點、收到的人能再轉發的電子名片。">
+<meta property="og:image" content="https://ericlin1994.github.io/line-ecard-relay/og.jpg">
+<meta property="og:url" content="https://ericlin1994.github.io/line-ecard-relay/">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#253043">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📇</text></svg>">
+
+<style>
+  :root{
+    --navy:#253043; --navy-2:#1E2838; --navy-3:#33415C;
+    /* 品牌棕金：文字／小色塊用深一階的 #8A5227（對冷白底 5.9:1、對白底 6.3:1），亮棕 #C4835A 只留給深色底 */
+    --brown:#8A5227; --gold:#C4835A; --gold-2:#DFA77C;
+    /* 頁面底色刻意選冷調紙白 #F6F7F9（色相偏藍灰）：與品牌深藍 #253043 同色系，
+       讓暖棕金成為唯一的暖色重點；不用暖米色，避免像未經挑選的預設值 */
+    --ink:#253043; --paper:#F6F7F9; --muted:#5F6672; --red:#B4462F;
+    --radius:20px;
+    /* TODO C: 官網 / LINE / IG / FB 連結集中在頁面最下方 JS 的 LINKS 物件，改那裡就好 */
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,-apple-system,sans-serif;
+    background:var(--paper);color:var(--ink);line-height:1.7;
+    padding-bottom:calc(20px + env(safe-area-inset-bottom));
+  }
+  .wrap{max-width:520px;margin:0 auto;padding:0 0 30px}
+  b,strong{font-weight:800}
+
+  /* ── 主卡 ── */
+  .hero{position:relative;background:linear-gradient(160deg,#0F1B33 0%,var(--navy-2) 55%,#3A2A22 100%);
+        color:#fff;border-radius:0 0 28px 28px;padding:22px 20px 20px;text-align:center;overflow:hidden}
+  .hero::after{content:"";position:absolute;inset:0;pointer-events:none;
+        background:radial-gradient(120% 85% at 82% -12%,rgba(201,162,39,.26),transparent 62%)}
+  .logo{font-size:17px;font-weight:800;letter-spacing:.30em;color:#fff}
+  .logo small{display:block;font-size:11px;font-weight:600;letter-spacing:.34em;color:#D8C79B;margin-top:4px}
+  .portrait{width:134px;height:134px;margin:16px auto 12px;border-radius:50%;object-fit:cover;
+        border:3px solid rgba(255,255,255,.85);box-shadow:0 10px 26px rgba(0,0,0,.38);background:#2b3b5c;display:block}
+  .portrait-ph{width:134px;height:134px;margin:16px auto 12px;border-radius:50%;
+        display:flex;align-items:center;justify-content:center;font-size:13px;letter-spacing:.2em;
+        border:2px dashed rgba(255,255,255,.45);color:rgba(255,255,255,.6);background:rgba(255,255,255,.06)}
+  .name{font-size:30px;font-weight:800;letter-spacing:.04em;margin:0 0 4px}
+  .name span{font-size:19px;font-weight:600;letter-spacing:.06em}
+  .role{font-size:13.5px;color:#C9D3E6;margin:0;letter-spacing:.06em}
+  .slogan{margin:16px auto 0;max-width:340px;font-size:17px;line-height:1.9;font-weight:600;color:#F3EDE1}
+  .slogan i{display:block;font-style:normal;font-size:15px;color:var(--gold-2);letter-spacing:.2em}
+  .slogan .big{font-size:21px}
+  .tags{display:flex;justify-content:center;flex-wrap:wrap;gap:8px;margin:16px 0 0}
+  .tag{font-size:12.5px;padding:6px 12px;border-radius:999px;background:rgba(255,255,255,.10);
+       border:1px solid rgba(255,255,255,.20);color:#EDE6D6;letter-spacing:.04em}
+
+  .actions{display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px;margin-top:20px}
+  .btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;
+       padding:12px 5px;border-radius:14px;text-decoration:none;font-size:12.5px;font-weight:700;
+       color:#fff;background:linear-gradient(180deg,var(--navy-3),var(--navy-2));
+       border:1px solid rgba(255,255,255,.16);letter-spacing:.03em;
+       /* 立體：硬邊厚度 + 內上緣高光（深底上不放彩色柔光暈） */
+       box-shadow:0 4px 0 rgba(12,20,34,.55), inset 0 1px 0 rgba(255,255,255,.20);
+       transform:translateY(0);
+       transition:transform .07s ease, box-shadow .07s ease, filter .12s ease}
+  .btn:active,.btn.is-pressed{
+       transform:translateY(4px);
+       box-shadow:0 1px 0 rgba(12,20,34,.5), inset 0 1px 0 rgba(255,255,255,.14);
+       filter:brightness(1.08)}
+  .btn .ic{font-size:18px;line-height:1}
+  /* 白字要 ≥4.5:1：漸層兩端都用深棕（#A0643A 4.8:1 → #8A5227 6.3:1） */
+  .btn.line{background:linear-gradient(180deg,#A0643A,var(--brown))}
+  .btn.tel{background:linear-gradient(180deg,#2E4675,var(--navy-2))}
+
+  /* ── 區塊標題 ── */
+  .sec-title{font-size:12px;font-weight:800;color:var(--muted);letter-spacing:.18em;margin:26px 20px 10px}
+  .sec-title em{font-style:normal;color:var(--brown)}
+
+  /* ── 橫向卡片輪播（對應原圖 1/7～7/7） ── */
+  .rail{display:flex;gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;padding:4px 20px 16px;scrollbar-width:none}
+  .rail::-webkit-scrollbar{display:none}
+  .card{flex:0 0 86%;scroll-snap-align:center;background:#fff;border-radius:var(--radius);
+        padding:20px 18px;border:1px solid rgba(37,48,67,.12)}
+  /* 卡片標題接在 h1 後面，用 h2（原本跳級到 h3） */
+  .card h2{margin:0 0 4px;font-size:19px;color:var(--navy);letter-spacing:.02em;line-height:1.5}
+  .card h2 em{font-style:normal;color:var(--brown)}
+  .card .sub{margin:0 0 14px;font-size:13.5px;color:var(--muted)}
+  .card p{margin:0 0 10px;font-size:14.5px;color:#3C4658}
+
+  .grid6{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0 4px}
+  /* 卡片裡的內層區塊不再做成小卡：只用底色或分隔線分組，避免卡中卡 */
+  .grid6 div{background:#ECEFF3;border-radius:12px;
+             padding:10px 4px;text-align:center;font-size:13px;font-weight:700;color:var(--navy)}
+  .grid6 div span{display:block;font-size:16px;margin-bottom:3px}
+
+  .box{border-top:1px solid rgba(37,48,67,.14);padding:14px 2px 0;margin-top:14px}
+  .box .bt{font-size:12.5px;font-weight:800;color:var(--brown);letter-spacing:.1em;margin-bottom:8px;text-align:center}
+  .box ul{margin:0;padding:0;list-style:none}
+  .box li{position:relative;padding-left:22px;font-size:14px;color:#3C4658;margin-bottom:8px}
+  .box li:last-child{margin-bottom:0}
+  .box li::before{content:"✓";position:absolute;left:0;top:0;color:var(--brown);font-weight:800}
+  .box.warn li::before{content:"✕";color:var(--red)}
+  .talk{margin-top:12px;background:var(--navy);color:#fff;border-radius:12px;padding:12px 14px;
+        font-size:13.5px;text-align:center;font-weight:700;letter-spacing:.03em}
+
+  /* 三大服務 */
+  /* 每一列都留底部內距，內容不貼著分隔線 */
+  .svc{display:flex;gap:12px;align-items:flex-start;padding:14px 0;border-bottom:1px dashed rgba(37,48,67,.14)}
+  .svc:last-child{border-bottom:0;padding-bottom:6px}
+  .svc .ico{flex:0 0 40px;height:40px;border-radius:12px;background:#ECEFF3;display:flex;
+            align-items:center;justify-content:center;font-size:19px}
+  .svc h3{margin:0 0 2px;font-size:16px;color:var(--navy)}
+  .svc .tagsm{font-size:12px;color:var(--brown);font-weight:700;letter-spacing:.06em;margin-bottom:4px}
+  .svc p{margin:0;font-size:13.5px;color:#4A5468;line-height:1.65}
+
+  /* 數據 */
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:4px 0 14px}
+  .stats div{background:linear-gradient(160deg,var(--navy),var(--navy-2));color:#fff;border-radius:14px;padding:13px 10px;text-align:center}
+  .stats b{display:block;font-size:23px;color:var(--gold-2);letter-spacing:.02em;line-height:1.3}
+  .stats span{font-size:12px;color:#CBD5E8;letter-spacing:.02em}
+  .steps{list-style:none;margin:0;padding:0;counter-reset:s}
+  .steps li{position:relative;padding:9px 0 9px 46px;border-bottom:1px dashed rgba(22,35,61,.10);font-size:14px;color:#3C4658}
+  .steps li:last-child{border-bottom:0}
+  .steps li::before{counter-increment:s;content:"0" counter(s);position:absolute;left:0;top:9px;
+        font-size:13px;font-weight:800;color:#fff;background:var(--brown);border-radius:8px;padding:3px 7px}
+  .steps b{color:var(--navy)}
+
+  /* 2x2 工藝 */
+  .craft{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px}
+  .craft figure{margin:0;border-radius:14px;overflow:hidden}
+  .craft .ph{aspect-ratio:4/3;background:repeating-linear-gradient(45deg,#E8EBF0,#E8EBF0 8px,#F1F3F6 8px,#F1F3F6 16px);
+             display:flex;align-items:center;justify-content:center;font-size:11px;color:#5F6672;letter-spacing:.1em}
+  .craft img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;border-radius:14px}
+  .craft figcaption{padding:10px 2px 4px}
+  .craft h3{margin:0 0 3px;font-size:14.5px;color:var(--navy)}
+  .craft p{margin:0;font-size:12px;color:#5A6478;line-height:1.6}
+
+  /* Google 評論 */
+  .rev{display:flex;gap:11px;padding:12px 0;border-bottom:1px dashed rgba(22,35,61,.12)}
+  .rev:last-of-type{border-bottom:0}
+  .rev .pic{flex:0 0 74px;width:74px;height:74px;border-radius:10px;overflow:hidden;background:#E8EBF0}
+  .rev .pic img{width:100%;height:100%;object-fit:cover;display:block}
+  .rev .pic.ph{display:flex;align-items:center;justify-content:center;font-size:10px;color:#5F6672;text-align:center;padding:4px}
+  .rev .who{font-size:13px;font-weight:800;color:var(--navy)}
+  .rev .stars{color:#E8A33D;font-size:12px;letter-spacing:.08em}
+  .rev .txt{font-size:13px;color:#4A5468;line-height:1.65;margin:3px 0 0}
+
+  .count{text-align:center;font-size:12px;color:var(--muted);margin:-4px 0 0;letter-spacing:.06em}
+  .count b{color:var(--navy)}
+
+  /* 門市資訊 */
+  .info{margin:6px 20px 0;background:#fff;border-radius:var(--radius);padding:12px 20px;
+        border:1px solid rgba(37,48,67,.12)}
+  .info .row{display:flex;gap:10px;padding:10px 0;border-bottom:1px dashed rgba(37,48,67,.14);font-size:14.5px}
+  .info .row:last-child{border-bottom:0}
+  /* 卡片內的聯絡資訊：不再是卡中卡，只用上方分隔線分組，左右仍留內距 */
+  .info.flat{margin:14px 0 0;background:none;border:0;border-top:1px solid rgba(37,48,67,.14);
+        border-radius:0;padding:4px 4px 0}
+  .info .k{flex:0 0 68px;color:var(--muted);font-size:12.5px;padding-top:3px;letter-spacing:.06em}
+  .info a{color:var(--navy);text-decoration:none;font-weight:700}
+  .info .note{font-size:12.5px;color:var(--muted)}
+
+  /* 置頂分享列：滑到哪裡都按得到 */
+  .topbar{position:sticky;top:0;z-index:30;padding:12px 20px 10px;
+          background:linear-gradient(180deg,var(--paper) 70%,rgba(246,247,249,.85) 100%)}
+  .topbar button{width:100%;padding:15px;border:0;border-radius:14px;background:var(--navy);color:#fff;
+          font-size:15px;font-weight:800;font-family:inherit;letter-spacing:.06em;
+          box-shadow:0 5px 0 #141C2B, inset 0 1px 0 rgba(255,255,255,.22);
+          transform:translateY(0);
+          transition:transform .07s ease, box-shadow .07s ease, filter .12s ease}
+  .topbar button:active,.topbar button.is-pressed{
+          transform:translateY(4px);filter:brightness(1.08);
+          box-shadow:0 1px 0 #141C2B, inset 0 1px 0 rgba(255,255,255,.16)}
+  /* 呼吸提示只調亮度（原本動 box-shadow 會把立體厚度蓋掉；也不放彩色光暈） */
+  .topbar button.hint{animation:pulse 1.6s ease-in-out infinite}
+  @keyframes pulse{0%,100%{filter:brightness(1)}
+                   50%{filter:brightness(1.14)}}
+  .share{margin:18px 20px 0}
+  .share button{width:100%;padding:16px;border:0;border-radius:14px;background:var(--navy);color:#fff;
+        font-size:15px;font-weight:800;font-family:inherit;letter-spacing:.06em;
+        box-shadow:0 5px 0 #141C2B, inset 0 1px 0 rgba(255,255,255,.22);
+        transform:translateY(0);
+        transition:transform .07s ease, box-shadow .07s ease, filter .12s ease}
+  .share button:active,.share button.is-pressed{
+        transform:translateY(4px);filter:brightness(1.08);
+        box-shadow:0 1px 0 #141C2B, inset 0 1px 0 rgba(255,255,255,.16)}
+  .tip{font-size:12px;color:var(--muted);text-align:center;margin:10px 20px 0;line-height:1.75}
+  #diag{display:none;margin:14px 20px 0;padding:12px 14px;border-radius:12px;background:#12192B;
+        color:#8FE3B0;font:12px/1.7 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-all}
+  #diag.show{display:block}
+  #diag .bad{color:#FF9B8A}
+  footer{text-align:center;font-size:11.5px;color:#5F6672;margin:24px 20px 0;line-height:1.9}
+  /* ═══ 分享模式：整頁只留一顆大按鈕（點卡片分享鈕進來時） ═══ */
+  /* 按鈕固定在畫面最下方：用 flex + sticky，不依賴 position:fixed
+     （LINE 內建瀏覽器對 fixed 的處理不一致；flex 的 min-height:100dvh
+       + margin-top:auto 在任何情況下都會把按鈕推到畫面底部） */
+  #shareScreen{display:none;flex-direction:column;min-height:100vh;min-height:100dvh;
+          padding:30px 22px 0;text-align:center}
+  html.share-mode .wrap{display:none !important}
+  html.share-mode #shareScreen{display:flex}
+  #shareScreen .ss-logo{font-weight:900;color:var(--navy);letter-spacing:.14em;font-size:19px;margin:40px 0 6px}
+  #shareScreen .ss-logo small{display:block;font-size:11px;letter-spacing:.3em;color:var(--brown);margin-top:7px;font-weight:700}
+  #shareScreen .ss-tip{color:#4A5468;font-size:14px;line-height:1.95;margin:26px 0 14px}
+  /* 主按鈕：立體（漸層 + 硬邊厚度 + 內高光）、正下方置中、按下會沉下去 */
+  #shareScreen button{display:block;width:100%;max-width:460px;margin:0 auto;
+          padding:22px 18px;border:0;border-radius:16px;
+          background:linear-gradient(180deg,#41526F 0%,var(--navy) 52%,#1B2434 100%);
+          color:#fff;font-size:20px;font-weight:800;font-family:inherit;letter-spacing:.06em;
+          box-shadow:0 6px 0 #141C2B, 0 14px 24px rgba(20,28,48,.34),
+                     inset 0 1px 0 rgba(255,255,255,.24);
+          transform:translateY(0);
+          transition:transform .07s ease, box-shadow .07s ease, filter .12s ease;
+          -webkit-tap-highlight-color:transparent;touch-action:manipulation;cursor:pointer}
+  /* 點擊回饋：整顆往下沉、立體厚度收掉 */
+  #shareScreen button:active,
+  #shareScreen button.is-pressed{
+          transform:translateY(5px);
+          box-shadow:0 1px 0 #141C2B, 0 5px 12px rgba(20,28,48,.26),
+                     inset 0 1px 0 rgba(255,255,255,.18);
+          filter:brightness(1.07)}
+  /* 處理中（選擇器已開啟）：維持按下的樣子並變暗 */
+  #shareScreen button.is-busy{
+          transform:translateY(4px);cursor:default;filter:brightness(.93);
+          box-shadow:0 2px 0 #141C2B, 0 8px 16px rgba(20,28,48,.3),
+                     inset 0 1px 0 rgba(255,255,255,.16)}
+  /* 底部 CTA 條：靠 flex 推到底部（margin-top:auto），內容變長時 sticky 也會黏著 */
+  #shareScreen .ss-bar{
+          position:sticky;bottom:0;margin-top:auto;z-index:50;width:auto;
+          margin-left:-22px;margin-right:-22px;
+          padding:14px 22px calc(16px + env(safe-area-inset-bottom));
+          background:linear-gradient(180deg,rgba(246,247,249,.70) 0%,rgba(246,247,249,.97) 45%);
+          backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+          border-top:1px solid rgba(37,48,67,.10)}
+  #shareScreen .ss-bar button{margin:0 auto}
+  #ssDiag{display:none;margin:26px 0 0;padding:12px 14px;border-radius:12px;background:#12192B;color:#D8DEE9;
+          font-size:11px;line-height:1.7;text-align:left;white-space:pre-wrap;font-family:Menlo,Consolas,monospace}
+</style>
+<script>
+/* 分享模式：在畫面繪製前就決定，避免先閃過一頁式網站再隱藏 */
+(function(){
+  var raw = location.search + location.hash;
+  try{ raw = decodeURIComponent(raw); }catch(e){}
+  if(raw.indexOf('share=1') !== -1) document.documentElement.className = 'share-mode';
+})();
+</script>
+</head>
+<body>
+<!-- 分享模式畫面：點卡片上的「分享給好友」進來時只顯示這一塊 -->
+<div id="shareScreen">
+  <div class="ss-logo">電子名片分享<small>E-CARD SHARE</small></div>
+  <p class="ss-tip" id="ssTip">正在為你開啟分享對象…</p>
+  <div class="ss-bar"><button id="ssBtn" onclick="fireShare()">📤 選擇分享對象</button></div>
+  <pre id="ssDiag"></pre>
+</div>
+<div class="wrap">
+
+  <!-- ═══════════ 分享列（置頂） ═══════════ -->
+  <div class="topbar">
+    <button id="shareBtn" onclick="shareCard()">📤 分享這張名片</button>
+  </div>
+
+<!-- CONTENT_START -->
+<!-- 這一整塊只在「中繼頁自己被開啟」時顯示；名片內容一律由客戶的頁面帶入 -->
+<div id="pageContent">
+  <header class="hero">
+    <div class="logo">電子名片分享<small>E-CARD SHARE</small></div>
+    <h1 class="name">電子名片<small>分享服務</small></h1>
+    <p class="role">LINE 原生卡片｜可左右滑動｜一鍵轉發</p>
+    <div class="slogan">
+      <i>“</i>
+      <span class="big">在 LINE 裡，把名片傳出去</span>
+      對方點一下就能再往下傳
+      <i>”</i>
+    </div>
+  </header>
+
+  <div class="sec-title">SERVICE｜<em>這是什麼服務</em></div>
+  <article class="card">
+    <h2>LINE <em>電子名片</em></h2>
+    <p class="sub">在聊天室裡可左右滑動的原生卡片</p>
+    <p>這是一套把店家名片做成 LINE 原生卡片的服務。收到名片的人可以在聊天室直接滑動、點按鈕撥電話／開地圖／加 LINE，也能一鍵再轉發給別人。</p>
+    <div class="box">
+      <div class="bt">你會拿到什麼</div>
+      <ul>
+        <li>一張可在 LINE 聊天室滑動的多頁名片</li>
+        <li>撥電話、導航、加 LINE 都能直接點</li>
+        <li>朋友收到後可以再轉發同一張名片</li>
+      </ul>
+    </div>
+  </article>
+
+  <div class="sec-title">NOTICE｜<em>請注意</em></div>
+  <article class="card">
+    <h2>分享功能<em>只能在 LINE 裡用</em></h2>
+    <p>「分享給好友」走的是 LINE 官方的分享機制，所以在電腦或一般瀏覽器打開時不會出現。請把名片連結貼進 LINE 的聊天室，再從聊天室點開。</p>
+    <p>本頁只提供名片分享的技術功能；名片內容由各店家自行提供與維護。</p>
+    <nav class="actions" style="grid-template-columns:1fr 1fr;margin-top:16px">
+      <a class="btn" href="https://ericlin1994.github.io/line-ecard-relay/privacy.html"><span class="ic">📄</span>隱私權政策</a>
+      <a class="btn" href="https://ericlin1994.github.io/line-ecard/"><span class="ic">📖</span>服務說明</a>
+    </nav>
+  </article>
+</div>
+<!-- CONTENT_END -->    <p class="tip" id="tipText">在 LINE 聊天室貼上名片網址，會自動展開成一張名片圖卡；<br>朋友點開就能看、一鍵加 LINE、直接導航。</p>
+  <pre id="diag"></pre>
+
+  <footer>
+    電子名片分享服務｜LINE 電子名片<br>
+    © <span id="y"></span> E-Card Share. All rights reserved.
+  </footer>
+</div>
+
+<!-- LINE LIFF SDK（在 LINE 內開啟時提供 shareTargetPicker） -->
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script>
+/* ══════════════════════════════════════════════════════════
+   TODO C：這裡填真實連結（填完整頁所有按鈕自動生效，不用改 HTML）
+   LINE 加好友連結格式：個人帳號 https://line.me/ti/p/~你的ID／官方帳號 https://line.me/R/ti/p/@你的ID
+   ══════════════════════════════════════════════════════════ */
+const LINKS = {
+  privacy: 'https://ericlin1994.github.io/line-ecard-relay/privacy.html'
+};
+const SHARE_TITLE = '電子名片分享服務';
+const SHARE_TEXT  = '在 LINE 聊天室裡可以左右滑動、按鈕可點、收到的人能再轉發的電子名片。';
+
+document.querySelectorAll('[data-link]').forEach(el=>{
+  const key = el.dataset.link;
+  el.setAttribute('href', LINKS[key] || '#');
+  if(key !== 'tel'){ el.setAttribute('target','_blank'); el.setAttribute('rel','noopener'); }
+});
+
+document.getElementById('y').textContent = new Date().getFullYear();
+window.addEventListener('error', e => diag('❌ JS 錯誤：' + e.message, true));
+window.addEventListener('unhandledrejection', e =>
+  diag('❌ 未處理的錯誤：' + ((e.reason && e.reason.message) || e.reason), true));
+
+/* ══════════════════════════════════════════════════════════
+   LIFF 原生分享（shareTargetPicker）
+   ─ 需要：LINE Login channel + LIFF app，並在 Console 開啟 shareTargetPicker
+   ─ 填入 LIFF_ID 後，在 LINE 內開啟本頁即可把「7 張原生卡片」分享給好友
+   ══════════════════════════════════════════════════════════ */
+const LIFF_ID = '2011946176-a2549LFU';   // 由 client.json 的 links.liff 自動寫入
+let liffReady = false, flexPayload = null;
+/* 共用模式下 payload 抓不到時為 true → 直接中止分享，
+   絕對不要拿「本頁自己的內容」當後備，那會送出別人的名片。 */
+let payloadFailed = false;
+
+/* 改動 flex-cards.json 後請把 BUILD 往後跳一號：
+   LINE 內建瀏覽器會快取檔案，不跳號會一直送出舊版卡片 */
+const BUILD = 'r1';
+const PAGE_VER = '2026-10-19-1100-中繼頁獨立站'   // 每次改頁面就改這個，用來確認手機拿到的是最新版
+
+
+
+
+
+/* ── 診斷面板：?debug=1 強制顯示；沒加參數時只在出錯時顯示 ── */
+const DEBUG = /debug=1/.test(decodeURIComponent(location.search));
+const diagEl = document.getElementById('diag');
+const ssDiagEl = document.getElementById('ssDiag');   // 分享模式下的黑框
+
+/* 送出用的 payload：加 ?h=43 就用 4:3 較矮版 hero（3:4 海報在手機上很高，
+   卡片下半部要往下滑才看得到；4:3 一眼看到全部） */
+function payloadForSend(){
+  if(!flexPayload) return null;
+  const q = decodeURIComponent(location.search);
+  if(!/h=43/.test(q)) return flexPayload;
+  const p = JSON.parse(JSON.stringify(flexPayload));
+  (p.contents.contents || []).forEach(b => {
+    if(b.hero && /card[0-9]+\.jpg$/.test(b.hero.url)){
+      b.hero.url = b.hero.url.replace(/\.jpg$/, '_43.jpg');
+      b.hero.aspectRatio = '4:3';
+    }
+  });
+  return p;
+}
+function diag(msg, bad){
+  if(DEBUG) diagEl.classList.add('show');   /* 網頁最下面的 log 只在 ?debug=1 出現 */
+  const line = (bad ? '<span class="bad">✗ ' : '· ') + String(msg).replace(/</g,'&lt;') + (bad ? '</span>' : '') + '\n';
+  diagEl.innerHTML += line;
+  // 分享模式下網站內容是隱藏的，所以黑框要同步顯示在分享畫面上
+  if(ssDiagEl){
+    ssDiagEl.innerHTML += line;
+    // 只在 ?debug=1 時顯示（正常使用者不會看到 log；失敗時改用下方的大字提示）
+    if(DEBUG) ssDiagEl.style.display = 'block';
+  }
+}
+
+/* ── 分享模式的自救診斷：不能讓使用者看到空白，也永遠不要一直等 ──
+   在分享模式下若 5 秒內 LIFF 沒起來，就把原因直接寫在畫面上。 */
+function shareModeSelfCheck(){
+  const ssTip = document.getElementById('ssTip');
+  const ssBtn = document.getElementById('ssBtn');
+  let q = location.search + (location.hash || '');
+  try{ q = decodeURIComponent(location.search) + decodeURIComponent(location.hash || ''); }catch(e){}
+  const inLine = /Line\/[\d.]+/i.test(navigator.userAgent);
+  const seenShare = q.indexOf('share=1') !== -1;
+  let src = '';
+  try{ src = getParam('src'); }catch(e){}
+
+  diag('──── 自助診斷（分享模式 5 秒未啟動）────');
+  diag('・在 LINE 內開啟：' + (inLine ? '是' : '否 ← 這就是問題，請用 LINE 開啟'));
+  diag('・收到的網址：' + location.search + (location.hash || ''));
+  diag('・偵測到 share=1：' + (seenShare ? '是' : '否 ← 參數被吃掉了'));
+  diag('・取到的 src：' + (src || '（無）'));
+  diag('・LIFF_ID：' + LIFF_ID);
+  diag('・LINE 版本：' + ((navigator.userAgent.match(/Line\/[\d.]+/) || ['（不在 LINE 內）'])[0]));
+
+  // 按鈕實際落點：用來判斷「有沒有固定在畫面底部」
+  const bar = document.querySelector('#shareScreen .ss-bar');
+  if(bar){
+    const r = bar.getBoundingClientRect();
+    const cs = getComputedStyle(bar);
+    diag('・CTA 條：position=' + cs.position
+         + '｜top=' + Math.round(r.top) + '｜bottom=' + Math.round(r.bottom)
+         + '｜畫面高=' + window.innerHeight
+         + '｜差=' + Math.round(window.innerHeight - r.bottom));
+  }else{
+    diag('・找不到 .ss-bar（HTML 可能還是舊版）');
+  }
+
+  if(liffReady){
+    diag('（LIFF 已就緒，可直接按下方按鈕）');
+    if(ssTip) ssTip.innerHTML = '請按下方按鈕選擇分享對象';
+  }else if(!inLine){
+    if(ssTip) ssTip.innerHTML = '這個頁面必須在 <b>LINE 裡面</b>開啟才能分享。<br>'
+      + '請把連結貼進 LINE 的聊天室，再從聊天室點開。';
+  }else if(!seenShare){
+    if(ssTip) ssTip.innerHTML = '這個連結沒有帶到分享參數（被 LINE 的轉址吃掉了）。<br>'
+      + '這是已知問題，已回報處理。';
+  }else{
+    if(ssTip) ssTip.innerHTML = '分享功能沒有啟動。<br>'
+      + '如果是把「頁面網址」貼進來開啟的，請改用卡片上的圖片，或這個連結：<br>'
+      + '<small>https://liff.line.me/' + LIFF_ID + '?share=1</small>';
+  }
+}
+
+if(document.documentElement.className === 'share-mode'){
+  setTimeout(shareModeSelfCheck, 5000);
+}
+
+/* 讀 query 參數。LIFF 會把原始 query 包進 liff.state，所以整串解碼後再找；
+   若拿到的值還是編碼過的（%3A%2F%2F…）就再解一次。 */
+function getParam(name){
+  const q = decodeURIComponent(location.search) + '&' + decodeURIComponent(location.hash || '');
+  const m = q.match(new RegExp('[?&]' + name + '=([^&#]*)'));
+  if(!m) return '';
+  let v = m[1];
+  if(!/^https?:/i.test(v)){ try{ v = decodeURIComponent(v); }catch(e){} }
+  return v;
+}
+
+(async function initLiff(){
+  // ── 刻意「不做」的事：不要自動把頁面網址轉成 liff.line.me 網址。
+  //    實測（iOS / LINE 26.x）LINE 開 LIFF 時「不一定」會帶 liff.state 或
+  //    liff.referrer，因此無法可靠判斷「我是不是已經在 LIFF 裡」，
+  //    自動轉址就會變成無限重導迴圈（實際踩到過）。
+  //    正確做法：卡片一律使用 liff.line.me 網址（build_flex.py 產生的就是）。
+  //    使用者若自己貼了頁面網址，就讓下方的自助診斷告訴他該用哪個連結。
+
+  // ── 共用模式（?src=<客戶的 flex-cards.json 網址>）──
+  // 卡片按鈕帶上對方那份 payload 的網址，這裡抓回來當「這次要分享的內容」。
+  // 好處：所有客戶共用同一組 LIFF，買家不必自己去 LINE 控制台申請。
+  // GitHub Pages 回應 Access-Control-Allow-Origin: *，所以跨網域讀取沒問題。
+  const srcParam = getParam('src');
+  const pageParam = getParam('page');
+  if(srcParam){
+    try{
+      const r = await fetch(srcParam, { cache: 'no-store' });
+      if(r.ok){
+        flexPayload = await r.json();
+        diag('payload 來源：共用模式 → ' + srcParam);
+      }else{
+        diag('共用模式讀取失敗（HTTP ' + r.status + '）', true);
+      }
+    }catch(e){
+      diag('共用模式讀取失敗：' + (e && e.message || e), true);
+    }
+    if(!flexPayload){
+      payloadFailed = true;
+      diag('→ 這次「不會」送出卡片（寧可失敗，也不要送成別人的名片）', true);
+    }
+  }else{
+    // 沒帶 src：這是「中繼頁」本身被開啟（例如使用者自己貼了 LIFF 網址）。
+    // 中繼頁沒有自己的名片內容 → 這次不提供任何 payload，避免送錯名片。
+    diag('沒有帶 src 參數 → 這次沒有可分享的內容（中繼頁只負責轉送客戶的卡片）');
+  }
+
+  // ── 「看名片頁」模式（?src=…&page=<客戶名片頁的網址>）──
+  //    把客戶自己那份名片頁的內容抓進來顯示，收件者就看得完整內容。
+  //    刻意「不 await」：那頁是整份 HTML（約 120KB），若等它回來才初始化 LIFF，
+  //    「分享這張名片」按鈕會有一段空窗期按了沒反應（實際踩到過）。
+  if(pageParam){
+    (async function loadPageContent(){
+      try{
+        const base = pageParam.replace(/\/?$/, '/');
+        const r = await fetch(base + 'index.html?b=' + BUILD, { cache: 'no-store' });
+        if(!r.ok){ diag('名片頁內容載入失敗 HTTP ' + r.status, true); return; }
+        const html = await r.text();
+        const m = html.match(/<!-- CONTENT_START -->([\s\S]*?)<!-- CONTENT_END -->/);
+        const host = document.getElementById('pageContent');
+        if(!m || !host){
+          diag('名片頁內容：找不到內容區塊（客戶頁可能是舊版模板）', true); return;
+        }
+        // 客戶頁的內容自己包了一層 <div id="pageContent">，用 DOM 拆掉（避免重複 id）
+        const tmp = document.createElement('div');
+        tmp.innerHTML = m[1];
+        const box = tmp.querySelector('#pageContent');
+        // 相對路徑的圖片／連結改成絕對（否則會指向中繼頁自己的網域）
+        host.innerHTML = (box ? box.innerHTML : m[1]).replace(
+          /\b(src|href)="(?!https?:|data:|mailto:|tel:|#)([^"]*)"/g,
+          (s, a, u) => a + '="' + base + u + '"');
+        // 客戶頁的按鈕是靠「它自己的 LINKS 物件」補上網址的；
+        // innerHTML 注入不會執行客戶頁的 script，所以在這裡補一次，
+        // 否則收件者看到的會是死連結（href="#"）。
+        const cl = parseClientLinks(html);
+        const fixed = rebindLinks(host, cl);
+        diag('客戶連結：' + (cl ? Object.keys(cl).length + ' 組，已補 ' + fixed + ' 個按鈕'
+                               : '讀不到 LINKS → 按鈕可能無效'), !cl);
+        bindRail();
+        diag('名片頁內容：已載入 ' + base);
+      }catch(e){ diag('名片頁內容載入失敗：' + (e && e.message || e), true); }
+    })();
+  }
+
+  // 指紋檢查：只驗 button（文字的 margin 是正常的）
+  if(flexPayload){
+    const bad = [];
+    (function walk(node){
+      if(!node || typeof node !== 'object') return;
+      if(node.type === 'button') ['height','margin','scaling'].forEach(k => { if(k in node) bad.push(k); });
+      Object.values(node).forEach(walk);
+    })(flexPayload);
+    const n = flexPayload.contents.contents.length;
+    diag('payload：' + n + ' 張卡｜按鈕屬性 ' +
+         (bad.length ? '含 ' + [...new Set(bad)].join('/') + ' → 會被 LINE 丟掉！' : '乾淨'), bad.length > 0);
+  }
+
+  // 環境指紋：LINE 版本不同，支援的 Flex 屬性也不同（舊版可能整則不渲染）
+  const ua = navigator.userAgent;
+  const lineVer = (ua.match(/Line\/([\d.]+)/i) || [])[1] || '（抓不到，可能是外部瀏覽器）';
+  diag('LINE App 版本：' + lineVer + '｜LIFF SDK：' + (window.liff && liff.getVersion ? liff.getVersion() : '?')
+       + '｜OS：' + (ua.match(/\((iPhone|iPad|Android)[^)]*/) || ['未知'])[0].slice(0,40));
+
+  if(LIFF_ID.indexOf('【') === 0) return;
+  if(!window.liff){ diag('LIFF SDK 沒載入（可能是網路或被封鎖）', true); return; }
+  diag('頁面版本：' + PAGE_VER);
+  if(DEBUG) diag('debug 模式：' + location.href);
+
+  // 只在 LINE 內執行 LIFF 初始化；外部瀏覽器（Safari/Chrome/桌機）不做，
+  // 否則會跳出 LINE 的認證頁面（channel 未發佈時會顯示 400）
+  const inLineApp = /Line\/[\d.]+/i.test(navigator.userAgent) || /liff\.state=/.test(location.search);
+  if(!inLineApp){
+    document.getElementById('tipText').innerHTML =
+      '小提示：<b>用 LINE 開啟這個連結</b>，才能把整組卡片原生分享給朋友；<br>在一般瀏覽器只能複製網址。';
+    return;
+  }
+
+  try{
+    await liff.init({ liffId: LIFF_ID });
+    liffReady = true;
+
+    const inLine = liff.isInClient();
+    diag('liff.init OK｜inClient=' + inLine + '｜loggedIn=' + liff.isLoggedIn()
+         + '｜shareTargetPicker=' + (liff.isApiAvailable ? liff.isApiAvailable('shareTargetPicker') : 'n/a')
+         + '｜payload=' + (flexPayload ? flexPayload.contents.contents.length + ' 張卡' : '未載入'), true);
+    // 從卡片上的「分享給好友」按鈕進來（?share=1）
+    // 注意：LIFF 會把原始 query 包進 liff.state，所以兩種都判斷
+    const raw = decodeURIComponent(location.search);
+    const fromCard = raw.includes('share=1');
+    if(inLine && fromCard){
+      const btn = document.getElementById('shareBtn');
+      btn.textContent = '📤 我要分享給好友';
+      btn.classList.add('hint');            // 置頂按鈕加呼吸光，直接引導點它
+      autoShare();                          // 自動彈出分享選擇器（此時畫面只有分享畫面）
+    }else if(inLine){
+      document.getElementById('tipText').innerHTML =
+        '你正在 LINE 裡開啟名片。<br>按最上面那顆按鈕，卡片就會以你的名義傳給朋友，對方也能再往下傳。';
+    }
+    // （已移除「直接傳到這個聊天室」按鈕：功能與分享選擇器重複，
+    //   且只在一對一聊天室出現，容易讓使用者困惑）
+  }catch(e){
+    diag('liff.init 失敗：' + (e && (e.message || e.code) || e), true);
+    diag('→ channel 若仍在 Developing，需把該 LINE 帳號加成 Tester 或發佈 channel', true);
+  }
+})();
+
+
+
+/* 分享畫面上的大按鈕：防重複觸發 + 按下的觸感回饋
+   （LINE 內建瀏覽器的 :active 不可靠，所以用 JS 補 class） */
+let shareFired = false;
+async function fireShare(){
+  const b = document.getElementById('ssBtn');
+  if(shareFired) return;                    /* 只防同一瞬間連點兩次 */
+  shareFired = true;
+  if(b){ b.classList.add('is-pressed','is-busy'); b.textContent = '開啟中…'; }
+  try{ if(navigator.vibrate) navigator.vibrate(12); }catch(e){}   /* 手機震一下（Android 支援） */
+  try{ await shareCard(); }catch(e){ diag('分享流程出錯：' + (e && (e.message||e)), true); }
+  /* 選擇器關閉（送出或取消）後就重新開放 —— 不然按鈕只會作用一次，
+     而畫面上卻寫著「再試一次」，那是在騙使用者 */
+  shareFired = false;
+  if(b){ b.classList.remove('is-pressed','is-busy'); b.textContent = '📤 選擇分享對象'; }
+}
+
+/* 手指按下／放開時即時回饋（連還沒放開都看得到下陷） */
+(function(){
+  const b = document.getElementById('ssBtn');
+  if(!b) return;
+  const down = () => { if(!shareFired) b.classList.add('is-pressed'); };
+  const up   = () => { if(!shareFired) b.classList.remove('is-pressed'); };
+  ['pointerdown','touchstart'].forEach(e => b.addEventListener(e, down, {passive:true}));
+  ['pointerup','pointercancel','touchend','touchcancel','pointerleave','blur']
+    .forEach(e => b.addEventListener(e, up, {passive:true}));
+})();
+
+/* 從卡片上的「分享給好友」按鈕進來時（?share=1），自動彈出分享對象選擇器，
+   使用者幾乎看不到這一頁。若 LINE 端要求必須由點擊觸發，就退回手動按鈕。 */
+async function autoShare(){
+  try{
+    diag('自動分享模式：嘗試直接開啟分享對象選擇器');
+    await new Promise(r => setTimeout(r, 200));
+    await shareCard();
+    diag('自動分享：已呼叫 shareTargetPicker');
+  }catch(e){
+    diag('自動分享失敗（改用上方按鈕）：' + (e && (e.message || e.code) || e), true);
+    document.getElementById('tipText').innerHTML =
+      '請按<b>最上面</b>那顆按鈕，選一個朋友或群組送出。';
+  }
+}
+
+
+/* ── 從客戶頁的 HTML 取出它的連結表（不要 eval 遠端內容）─────────
+   1) 新版客戶頁會帶一段 application/json（id=ecard-links），直接 JSON.parse
+   2) 舊版：解析 const LINKS = {...}; 只接受字串常值與 encodeURIComponent('…')
+   取不到就回 null（呼叫端會把按鈕問題寫進診斷）。 */
+function parseClientLinks(html){
+  let m = html.match(/<script[^>]*id="ecard-links"[^>]*>([\s\S]*?)<\/script>/);
+  if(m){ try{ return JSON.parse(m[1]); }catch(e){} }
+  m = html.match(/const\s+LINKS\s*=\s*\{([\s\S]*?)\};/);
+  if(!m) return null;
+  const out = {};
+  m[1].split(/\r?\n/).forEach(line => {
+    const kv = line.match(/([A-Za-z_$][\w$]*)\s*:\s*(.+?),?\s*$/);
+    if(!kv) return;
+    const strs = (kv[2].match(/'[^']*'|"[^"]*"/g) || []).map(s => s.slice(1, -1));
+    if(!strs.length) return;
+    let v;
+    if(/encodeURIComponent/.test(kv[2])){
+      v = strs[0] + encodeURIComponent(strs.slice(1).join(' '));
+    }else{
+      v = strs[0];
+    }
+    if(/^(https?:|tel:|mailto:)/i.test(v)) out[kv[1]] = v;
+  });
+  return Object.keys(out).length ? out : null;
+}
+
+/* 把客戶的連結補到剛注入的按鈕上 */
+function rebindLinks(host, links){
+  if(!links) return 0;
+  let n = 0;
+  host.querySelectorAll('[data-link]').forEach(a => {
+    const v = links[a.dataset.link];
+    if(v){ a.setAttribute('href', v); n++; }
+  });
+  return n;
+}
+
+async function shareCard(){
+  diag('👆 分享按鈕被按下（' + new Date().toLocaleTimeString() + '）');
+  const tip = document.getElementById('tipText');
+
+  if(payloadFailed){
+    diag('❌ 要分享的卡片內容沒抓到，已中止（避免送成別人的名片）', true);
+    if(tip) tip.textContent = '卡片內容載入失敗，請關掉重開，或請對方重新傳一次連結。';
+    return;
+  }
+
+  // 1) 在 LINE 內 → 用 shareTargetPicker 送出原生 Flex 卡片
+  if(liffReady){
+    if(!liff.isLoggedIn()){
+      diag('尚未登入 LIFF，導向登入…');
+      try{ liff.login({ redirectUri: location.href }); return; }catch(e){ diag('登入失敗：'+e, true); }
+    }
+    if(!flexPayload){
+      diag('flex-cards.json 沒載入 → 無法送原生卡片', true);
+    }else if(!liff.isApiAvailable('shareTargetPicker')){
+      diag('shareTargetPicker 不可用 → Console 的 LIFF 分頁還沒按 Enable', true);
+    }else{
+      const q = decodeURIComponent(location.search);
+      let msg, label;
+      if(/text=1/.test(q)){
+        msg = [{ type: 'text', text: '測試訊息：看到這行字＝分享機制正常。' }];
+        label = '純文字';
+      }else{
+        msg = [payloadForSend()];
+        label = '完整卡片';
+      }
+      diag('本次送出類型：' + (typeof label2 !== 'undefined' ? label2 : label));
+      try{
+        const res = await liff.shareTargetPicker(msg, { isMultiple: true });
+        if(res){ diag('shareTargetPicker 回傳成功，卡片已送出'); tip.textContent = '✅ 已送出，謝謝你幫忙分享！'; }
+        else   { diag('使用者取消（回傳 null），沒有送出'); }
+        // 分享流程頁只是用來取得 session 的中轉頁，用完就關掉（送出／取消都要）
+        setTimeout(() => { try{ if(window.liff && liff.isInClient && liff.isInClient()) liff.closeWindow(); }catch(e){} }, res ? 900 : 600);
+        return;
+      }catch(e){
+        diag('shareTargetPicker 失敗：' + (e && (e.message || e.code) || e), true);
+        diag('→ 常見原因：Flex 內容不符規格、或尚未 Enable', true);
+      }
+    }
+  }else{
+    diag('LIFF 未就緒（liffReady=false）→ 這次只會用一般分享，對方收到的是「連結」不是卡片', true);
+  }
+
+  // 2) 一般瀏覽器 → 原生分享選單，或複製網址
+  const data = { title: SHARE_TITLE, text: SHARE_TEXT, url: location.href };
+  try{
+    if(navigator.share){ diag('改用系統分享選單（navigator.share）'); await navigator.share(data); return; }
+    await navigator.clipboard.writeText(location.href);
+    diag('已複製網址到剪貼簿');
+    alert('網址已複製，貼到 LINE 就能傳給朋友');
+  }catch(e){ diag('一般分享也失敗：' + e, true); }
+}
+
+/* 一頁式網頁上的按鈕也給同樣的按壓回饋
+   （LINE 內建瀏覽器的 :active 不可靠，所以用 pointer/touch 事件補 class） */
+(function(){
+  document.querySelectorAll('.btn, .topbar button, .share button').forEach(b => {
+    const down = () => b.classList.add('is-pressed');
+    const up   = () => b.classList.remove('is-pressed');
+    ['pointerdown','touchstart'].forEach(e => b.addEventListener(e, down, {passive:true}));
+    ['pointerup','pointercancel','touchend','touchcancel','pointerleave','blur']
+      .forEach(e => b.addEventListener(e, up, {passive:true}));
+  });
+  // 從外部連結返回時，把殘留的按下狀態清掉
+  window.addEventListener('pageshow', () =>
+    document.querySelectorAll('.is-pressed').forEach(e => e.classList.remove('is-pressed')));
+})();
+
+/* 滑動時更新「n / 7」指示（主卡算第 1 張）
+   包成函式：中繼頁載入客戶的名片頁內容後要重新綁定一次 */
+function bindRail(){
+  const rail = document.getElementById('rail'), countEl = document.getElementById('count');
+  if(!rail || !countEl) return;
+  const n = rail.children.length;          /* 用實際張數，不要寫死 */
+  const setCount = () => {
+    /* 取「中心最接近滑動視窗中心」的那一張當目前頁碼。
+       原本的判斷是「中心在視窗左半邊就算過關」→ 最後一張永遠過不了中線，
+       所以舊版會停在 6/7 數不到最後一張。 */
+    const mid = rail.scrollLeft + rail.clientWidth / 2;
+    let best = 0, bestD = Infinity;
+    [...rail.children].forEach((c, i) => {
+      /* offsetLeft 是相對 offsetParent，要扣掉 rail 自己的位移才能跟 mid 比 */
+      const center = c.offsetLeft - rail.offsetLeft + c.offsetWidth / 2;
+      const d = Math.abs(center - mid);
+      if(d < bestD){ bestD = d; best = i; }
+    });
+    countEl.innerHTML = '<b>' + (best + 1) + '</b> / ' + n + '　左右滑動看更多';
+  };
+  rail.addEventListener('scroll', setCount, {passive:true});
+  setCount();
+}
+bindRail();
+</script>
+</body>
+</html>
