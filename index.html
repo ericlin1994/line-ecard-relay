@@ -683,6 +683,13 @@ function rebindLinks(host, links){
 async function shareCard(){
   diag('👆 分享按鈕被按下（' + new Date().toLocaleTimeString() + '）');
   const tip = document.getElementById('tipText');
+  // 中繼頁自己被打開時沒有 src → 沒有可分享的名片內容，
+  // 這時候退到系統分享器只會讓人以為「分享壞了」。直接說清楚。
+  if(!getParam('src')){
+    diag('這一頁是中繼服務頁，沒有名片內容可分享（請從 LINE 聊天室的卡片點進來）');
+    if(tip) tip.innerHTML = '這裡沒有可分享的名片內容。<br>請從 <b>LINE 聊天室的卡片</b>點進來，或點卡片上的「分享給好友」。';
+    return;
+  }
 
   if(payloadFailed){
     diag('❌ 要分享的卡片內容沒抓到，已中止（避免送成別人的名片）', true);
