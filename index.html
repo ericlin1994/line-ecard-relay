@@ -514,8 +514,10 @@ function getParam(name){
           diag('名片頁內容：找不到內容區塊（客戶頁可能是舊版模板）', true); return;
         }
         // 客戶頁的內容自己包了一層 <div id="pageContent">，用 DOM 拆掉（避免重複 id）
-        const tmp = document.createElement('div');
-        tmp.innerHTML = m[1];
+        // 用 DOMParser 而不是 createElement('div')+innerHTML：
+        // 後者在解析時就會去抓圖片，造成同一張圖被抓兩次
+        //（一次相對路徑→指向中繼頁而 404、一次改寫後的絕對路徑）。
+        const tmp = new DOMParser().parseFromString(m[1], 'text/html');
         const box = tmp.querySelector('#pageContent');
         // 相對路徑的圖片／連結改成絕對（否則會指向中繼頁自己的網域）
         host.innerHTML = (box ? box.innerHTML : m[1]).replace(
